@@ -11,7 +11,7 @@ namespace LAB_MndMAPS__SymplexMethod
         Art
     }
 
-    public class Coef
+    public class Coef : ICloneable
     {
         public TypeCoef TypeCoef { get; set; }
         public double Value { get; set; }
@@ -19,26 +19,32 @@ namespace LAB_MndMAPS__SymplexMethod
 
         public static bool operator !=(Coef coef1, Coef coef2)
         {
-            if (coef1.Row != coef2.Row ||
-                coef1.TypeCoef != coef2.TypeCoef ||
-                coef1.Value != coef2.Value)
-            {
+            return !(coef1 == coef2);
+        }
+
+        public static bool operator == (Coef coef1, Coef coef2)
+        {
+            if ((object)coef1 == null && (object)coef2 == null)
                 return true;
+
+            if ((object) coef1 != null && (object) coef2 != null)
+            {
+                if (coef1.Row == coef2.Row &&
+                    coef1.TypeCoef == coef2.TypeCoef &&
+                    coef1.Value == coef2.Value)
+                {
+                    return true;
+                }
+
+                return false;
             }
 
             return false;
         }
 
-        public static bool operator == (Coef coef1, Coef coef2)
+        public object Clone()
         {
-            if (coef1.Row == coef2.Row &&
-                coef1.TypeCoef == coef2.TypeCoef &&
-                coef1.Value == coef2.Value)
-            {
-                return true;
-            }
-            
-            return false;
+            return new Coef() {TypeCoef = TypeCoef, Value = Value, Row = Row};
         }
     }
 }

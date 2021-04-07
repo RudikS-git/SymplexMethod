@@ -27,7 +27,7 @@ namespace LAB_MndMAPS__SymplexMethod
             Coef[] coefs = new Coef[arrayCoefs.Length];
             for (int i = 0; i < coefs.Length; i++)
             {
-                coefs[i] = new Coef() { TypeCoef = typeCoefs, Value = arrayCoefs[i]};
+                coefs[i] = new Coef() { TypeCoef = typeCoefs, Value = arrayCoefs[i], Row = i };
             }
 
             return coefs;

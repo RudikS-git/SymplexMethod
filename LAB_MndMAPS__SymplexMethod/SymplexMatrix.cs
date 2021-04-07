@@ -105,6 +105,6 @@ namespace LAB_MndMAPS__SymplexMethod
                     MultiplyRow(i, -1);
                 }
             }
-        }
+        } 
     }
 }

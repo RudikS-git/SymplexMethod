@@ -11,6 +11,13 @@ namespace LAB_MndMAPS__SymplexMethod
 
         private double[,] Table { get; set; }
         private Coef[] CurrentBasis { get; set; } // индексы коэффициентов
+        private double[,] LastsymplexDifference { get; set; }
+
+        public delegate void TableChanges(int iteration, Coef[] coefsFunction, Coef[] coefs);
+        public event TableChanges EventTableChanges;
+        
+        public Func<double, double, bool> isValid = null;
+        public Func<double[,], int, int> getFirst = null;
 
         public SymplexTable(SymplexMatrix symplexMatrix)
         {
@@ -97,12 +104,12 @@ namespace LAB_MndMAPS__SymplexMethod
                         leadingRowIndex = i;
                     }
                 }
-                else if(Table[i, leadingColumn] > 0 && Table[i + 1, leadingColumn] < 0)
+                else if(Table[i, leadingColumn] > 0 && Table[i + 1, leadingColumn] <= 0)
                 {
                     leadingRow = Table[i, 0] / Table[i, leadingColumn];
                     leadingRowIndex = i;
                 }
-                else if (Table[i, leadingColumn] < 0 && Table[i + 1, leadingColumn] > 0)
+                else if (Table[i, leadingColumn] <= 0 && Table[i + 1, leadingColumn] > 0)
                 {
                     leadingRow = Table[i + 1, 0] / Table[i + 1, leadingColumn];
                     leadingRowIndex = i + 1;
@@ -136,49 +143,63 @@ namespace LAB_MndMAPS__SymplexMethod
 
             if (IsBasisHasArt()) // в базисе присутствуют искусственные элементы
             {
+                index = getFirst(symplexDifference, 1);
+                
                 for (int i = 0; i < SymplexMatrix.ObjectiveFunction.Coefs.Count - countArt - 1; i++)
                 {
-                    if(symplexDifference[i, 1] < 0 && symplexDifference[i + 1, 1] < 0)
+                    if(isValid(symplexDifference[i, 1], symplexDifference[i + 1, 1]))
                     {
                         if (symplexDifference[i, 1] > symplexDifference[i + 1, 1])
                         {
                             index = i + 1;
                         }
                     }
-                    else if (symplexDifference[i, 1] < 0 && symplexDifference[i + 1, 1] > 0)
-                    {
-                        index = i;
-                    }
-                    else if (symplexDifference[i, 1] > 0 && symplexDifference[i + 1, 1] < 0)
-                    {
-                        index = i + 1;
-                    }
                 }
 
             }
             else
             {
+                index = getFirst(symplexDifference, 0);
+                
                 for (int i = 0; i < SymplexMatrix.ObjectiveFunction.Coefs.Count - countArt - 1; i++)
                 {
-                    if (symplexDifference[i, 0] < 0 && symplexDifference[i + 1, 0] < 0)
+                    if (isValid(symplexDifference[i, 0], symplexDifference[i + 1, 0]))
                     {
                         if (symplexDifference[i, 0] > symplexDifference[i + 1, 0])
                         {
                             index = i + 1;
                         }
                     }
-                    else if (symplexDifference[i, 0] < 0 && symplexDifference[i + 1, 0] > 0)
-                    {
-                        index = i;
-                    }
-                    else if (symplexDifference[i, 0] > 0 && symplexDifference[i + 1, 0] < 0)
-                    {
-                        index = i + 1;
-                    }
                 }
             }
  
             return index;
+        }
+
+        private int GetFirstNegValueIndex(double [,] array, int col)
+        {
+            for(int i = 0; i < array.Length; i++)
+            {
+                if (array[i, col] < 0)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private int GetFirstPosValueIndex(double[,] array, int col)
+        {
+            for (int i = 0; i < array.Length; i++)
+            {
+                if (array[i, col] > 0)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private void MultiplyRow(double[,] table, int row, double number)
@@ -188,36 +209,110 @@ namespace LAB_MndMAPS__SymplexMethod
                 table[row, i] *= number;
             }    
         }
-        
-        public double[] GetSolution()
+
+        public Coef[] GetDualSolution()
         {
+            Coef[] coefs = new Coef[SymplexMatrix.GetCountBalance()];
+            
+            for (int i = SymplexMatrix.ObjectiveFunction.Coefs.Count - SymplexMatrix.GetCountArtificial() - SymplexMatrix.GetCountBalance(), j = 0; i < SymplexMatrix.GetCountBalance(); i++, j++)
+            {
+                coefs[j].Value = LastsymplexDifference[i, 0];
+                coefs[j].TypeCoef = TypeCoef.Balance;
+            }
+
+            return coefs;
+        }
+        
+        public Coef[] GetSolution()
+        {
+            if (SymplexMatrix.ObjectiveFunction.Striving == Striving.Max)
+            {
+                isValid = (x, y) => (x < 0 && y < 0);
+                getFirst = GetFirstNegValueIndex;
+            }
+            else
+            {
+                isValid = (x, y) => (x > 0 && y > 0);
+                getFirst = GetFirstPosValueIndex;
+            }
+            
+            int iteration = 0;
+            double[,] symplexDifference = null;
+            
             while (true)
             {
                 double[] z = new double[SymplexMatrix.ObjectiveFunction.Coefs.Count];
 
                 z[0] = ScalarVectorB(); // скалярное произведение
-                var symplexDfference = ScalarVectorsA();
-                int leadingColumn = GetLeadingColumn(symplexDfference);
+                symplexDifference = ScalarVectorsA();
+                int leadingColumn = GetLeadingColumn(symplexDifference);
 
                 if (leadingColumn == -1) // в сумме нет отриц элементов, значит решение является оптимальным
                 {
                     // вставить дополнительную проверку на наличие в базисе искусственных переменных
                     // если в базисе присутствуют, то решения нет
                     // завершаем
+
+                    if (IsBasisHasArt())
+                    {
+                        throw new ArgumentException(
+                            "В строке симплексных разностей отсутсвуют отрицательные значения, но в базисе все еще есть искусственные переменные\n" +
+                            "Решения не существует!");
+                    }
+                    
                     break;
                 }
 
                 int leadingRow = GetLeadingRow(leadingColumn);
+
+                if (leadingRow == -1)
+                {
+                    throw new ArgumentException("Отсутствуют положительные элементы в столбце. Решения не существует!");
+                }
 
                 // рассчитываем новую таблицу
                 CalculateNewTable(leadingRow, leadingColumn + 1);
 
                 // заносим в базис другой элемент, который относится к ведущему столбцу
                 ChangeBasis(leadingRow, SymplexMatrix.ObjectiveFunction.Coefs[leadingColumn]);
+                iteration++;
+
+                EventTableChanges?.Invoke(iteration, SymplexMatrix.ObjectiveFunction.Coefs.ToArray(), ShapeOutputCoefs());
             }
 
+            LastsymplexDifference = symplexDifference;
 
-            return new double[5];
+            return ShapeOutputCoefs();
+        }
+
+        private Coef[] ShapeOutputCoefs()
+        {
+            Coef[] coef = new Coef[CurrentBasis.Length];
+
+            for (int i = 0; i < CurrentBasis.Length; i++)
+            {
+                coef[i] = new Coef()
+                {
+                    Row = GetIndexCoef(CurrentBasis[i]),
+                    TypeCoef = CurrentBasis[i].TypeCoef,
+                    Value = Table[i, 0]
+                };
+            }
+
+            return coef;
+        }
+
+        private int GetIndexCoef(Coef coef)
+        {
+            for (int i = 0; i < SymplexMatrix.ObjectiveFunction.Coefs.Count; i++)
+            {
+                if (coef == SymplexMatrix.ObjectiveFunction.Coefs[i])
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private void CalculateNewTable(int leadingRow, int leadingColumn)
@@ -286,7 +381,14 @@ namespace LAB_MndMAPS__SymplexMethod
                 {
                     if (CurrentBasis[j].TypeCoef == TypeCoef.Art)
                     {
-                        symplexDifference[i, 1] += Table[j, i + 1] * -1;
+                        if (SymplexMatrix.ObjectiveFunction.Striving == Striving.Max)
+                        {
+                            symplexDifference[i, 1] += Table[j, i + 1] * -1;
+                        }
+                        else
+                        {
+                            symplexDifference[i, 1] += Table[j, i + 1];
+                        }
                     }
                     else if (CurrentBasis[j].TypeCoef == TypeCoef.Balance)
                     {
@@ -311,20 +413,5 @@ namespace LAB_MndMAPS__SymplexMethod
             
             return symplexDifference;
         }
-    }
-
-    public static class Symplex
-    {
-        public static void GetSolution(SymplexMatrix symplexMatrix)
-        {
-            if (symplexMatrix.ObjectiveFunction.Striving == Striving.Min)
-            {
-                symplexMatrix.ObjectiveFunction.SwapStriving();
-            }
-
-            SymplexTable symplexTable = new SymplexTable(symplexMatrix);
-            symplexTable.GetSolution();
-        }
-
     }
 }
